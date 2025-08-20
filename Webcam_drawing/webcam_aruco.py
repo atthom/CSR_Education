@@ -48,12 +48,23 @@ def extract_pixels(frame, mask):
 def preprocess_sketch(extracted):
     # Convert to grayscale
     gray = cv2.cvtColor(extracted, cv2.COLOR_BGR2GRAY)
+    
+    # Apply thresholding to convert to black and white
+    _, bw = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+    
+    # Apply contrast enhancement
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(bw)
+    
     # Invert colors
-    inverted = cv2.bitwise_not(gray)
+    inverted = cv2.bitwise_not(enhanced)
+    
     # Normalize to 0-1 range
     normalized = inverted.astype(np.float32) / 255.0
+    
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
+    
     return pil_image
 
 def generate_image_from_sketch(sketch, pipe):
@@ -101,6 +112,10 @@ def main():
             
             # Preprocess the extracted sketch
             sketch = preprocess_sketch(extracted)
+            
+            # Convert PIL Image back to OpenCV format for display
+            sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
+            cv2.imshow('Preprocessed Sketch', sketch_cv)
             
             # Generate image from sketch
             generated_image = generate_image_from_sketch(sketch, pipe)
