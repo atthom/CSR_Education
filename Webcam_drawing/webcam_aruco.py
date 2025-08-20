@@ -112,9 +112,10 @@ def main():
             # Visualize the mask
             cv2.imshow('Mask', mask)
         else:
-            cv2.destroyWindow('Extracted')
-            cv2.destroyWindow('Generated')
-            cv2.destroyWindow('Mask')
+            pass
+            #cv2.destroyWindow('Extracted')
+            #cv2.destroyWindow('Generated')
+            #cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)

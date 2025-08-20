@@ -70,7 +70,7 @@ def yolo_stream():
     cv2.destroyAllWindows()
 
 
-model = YOLO("yolo11s-pose.pt")
+model = YOLO("yolo11s-seg.pt")
 #source = 'http://images.cocodataset.org/val2017/000000039769.jpg'
 #model.predict(source=source, save=True)
 #only_yolo()
