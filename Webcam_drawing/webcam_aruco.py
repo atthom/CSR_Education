@@ -7,7 +7,7 @@ from PIL import Image
 
 
 # Load predefined dictionary of ArUco markers
-aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
 parameters = cv2.aruco.DetectorParameters()
 detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
@@ -24,14 +24,22 @@ def detect_aruco(frame):
     
     return frame, corners, ids
 
-def extract_pixels(frame, corners):
-    # Convert corners to numpy array
-    corners = np.array([corner[0] for corner in corners], dtype=np.int32)
-    
+def create_polygon_mask(frame, corners):
     # Create a mask
     mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-    cv2.fillPoly(mask, [corners], 255)
     
+    # Extract the corners of all markers and flatten them into a single array
+    polygon_points = np.concatenate([corner.reshape(-1, 2) for corner in corners])
+    
+    # Find the convex hull of all points to create a polygon
+    hull = cv2.convexHull(polygon_points.astype(np.int32))
+    
+    # Fill the polygon
+    cv2.fillConvexPoly(mask, hull, 255)
+    
+    return mask
+
+def extract_pixels(frame, mask):
     # Extract pixels
     extracted = cv2.bitwise_and(frame, frame, mask=mask)
     
@@ -85,9 +93,10 @@ def main():
         # Detect ArUco markers
         frame, corners, ids = detect_aruco(frame)
         
-        # If exactly 4 markers are detected, extract pixels and generate image
-        if ids is not None and len(ids) == 4:
-            extracted = extract_pixels(frame, corners)
+        # If at least 4 markers are detected, create mask, extract pixels and generate image
+        if ids is not None and len(ids) >= 4:
+            mask = create_polygon_mask(frame, corners)
+            extracted = extract_pixels(frame, mask)
             cv2.imshow('Extracted', extracted)
             
             # Preprocess the extracted sketch
@@ -99,9 +108,13 @@ def main():
             # Convert PIL Image to OpenCV format
             generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
             cv2.imshow('Generated', generated_cv)
+            
+            # Visualize the mask
+            cv2.imshow('Mask', mask)
         else:
             cv2.destroyWindow('Extracted')
             cv2.destroyWindow('Generated')
+            cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
