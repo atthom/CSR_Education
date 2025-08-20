@@ -65,6 +65,9 @@ def yolo_stream():
         else:
             # Break the loop if the end of the video is reached
             break
+    
+    cap.release()
+    cv2.destroyAllWindows()
 
 
 model = YOLO("yolo11s-pose.pt")

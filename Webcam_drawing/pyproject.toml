@@ -1,0 +1,16 @@
+
+[project]
+name = "webcam_drawing"
+version = "0.1.0"
+description = "A project for webcam capture and ArUco marker detection"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.5",
+    "numpy",
+    "opencv-python",
+    "reportlab>=4.4.3",
+]
+
+[tool.poetry.virtualenvs]
+in-project = true
+path = ".venv"
