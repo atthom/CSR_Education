@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from diffusers import StableDiffusionImg2ImgPipeline
+from diffusers import DiffusionPipeline
 
 
 # Load predefined dictionary of ArUco markers
@@ -93,30 +93,29 @@ def preprocess_sketch(extracted, corners):
     # Convert to grayscale
     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
     
-    # Apply Canny edge detection
-    edges = cv2.Canny(gray, 100, 200)  # Adjust these thresholds as needed
+    # Apply Gaussian adaptive thresholding
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 27, 4)
     
     # Invert the colors
-    inverted_edges = cv2.bitwise_not(edges)
+    #inverted = cv2.bitwise_not(thresh)
     
     # Normalize to 0-1 range
-    normalized = inverted_edges.astype(np.float32) / 255.0
+    normalized = thresh.astype(np.float32) / 255.0
     
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
     
     return pil_image
 
-def load_sketch_to_image_model():
-    model_id = "runwayml/stable-diffusion-v1-5"
-    pipe = StableDiffusionImg2ImgPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+def load_controlnet_model():
+    pipe = DiffusionPipeline.from_pretrained("xinsir/controlnet-scribble-sdxl-1.0")
     pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
     return pipe
 
 def generate_image_from_sketch(sketch, pipe):
     # Preprocess the sketch
     preprocess = transforms.Compose([
-        transforms.Resize((512, 512)),
+        transforms.Resize((1024, 1024)),
         transforms.ToTensor(),
     ])
     sketch_tensor = preprocess(sketch)
@@ -126,7 +125,7 @@ def generate_image_from_sketch(sketch, pipe):
 
     # Generate image from sketch
     prompt = "Convert this sketch into real life version, follow exact structure"
-    image = pipe(prompt=prompt, image=sketch_image, strength=0.75, guidance_scale=7.5).images[0]
+    image = pipe(prompt=prompt, image=sketch_image).images[0]
     
     return image
 
@@ -138,12 +137,12 @@ def main():
         print("Error: Could not open webcam.")
         return
 
-    # Load the Sketch-to-Image model
+    # Load the ControlNet model
     try:
-        pipe = load_sketch_to_image_model()
-        print(f"Model loaded successfully. Using device: {pipe.device}")
+        pipe = load_controlnet_model()
+        print(f"ControlNet model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
-        print(f"Error loading the model: {str(e)}")
+        print(f"Error loading the ControlNet model: {str(e)}")
         return
     
     frame_count = 0
