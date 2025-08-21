@@ -94,11 +94,11 @@ def preprocess_sketch(extracted, corners):
     # Convert to grayscale
     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
     
-    # Apply adaptive Gaussian thresholding
-    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 4)
+    # Apply Canny edge detection
+    edges = cv2.Canny(gray, 100, 200)  # Adjust these thresholds as needed
     
     # Normalize to 0-1 range
-    normalized = bw.astype(np.float32) / 255.0
+    normalized = edges.astype(np.float32) / 255.0
     
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
@@ -110,9 +110,16 @@ def generate_image_from_sketch(sketch, model):
     preprocess = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
     sketch_tensor = preprocess(sketch).unsqueeze(0)
+
+    # If the input is grayscale, repeat it to create a 3-channel input
+    if sketch_tensor.shape[1] == 1:
+        sketch_tensor = sketch_tensor.repeat(1, 3, 1, 1)
+
+    # Normalize the 3-channel input
+    normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    sketch_tensor = normalize(sketch_tensor)
 
     # Generate image from sketch
     with torch.no_grad():
