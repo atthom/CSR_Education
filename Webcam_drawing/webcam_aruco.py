@@ -60,6 +60,31 @@ def crop_image(image, corners):
     
     return cropped
 
+def calculate_perspective_transform(corners):
+    # Sort corners based on their position (top-left, top-right, bottom-right, bottom-left)
+    sorted_corners = sorted(corners, key=lambda x: (x[0][0][1], x[0][0][0]))  # Sort by y, then x
+    tl, tr, br, bl = sorted_corners
+
+    # Define the dimensions of the output image (19cm x 27.7cm)
+    width = 1970  # 19.7cm * 100 pixels/cm
+    height = 2770  # 27.7cm * 100 pixels/cm
+
+    # Define the destination points
+    dst_pts = np.array([[0, 0], [width-1, 0], [width-1, height-1], [0, height-1]], dtype=np.float32)
+
+    # Get the source points from the detected corners
+    src_pts = np.array([tl[0][0], tr[0][0], br[0][0], bl[0][0]], dtype=np.float32)
+
+    # Calculate the perspective transform matrix
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+    return M, (width, height)
+
+def apply_perspective_transform(image, M, output_size):
+    # Apply the perspective transform
+    result = cv2.warpPerspective(image, M, output_size)
+    return result
+
 def preprocess_sketch(extracted, corners):
     # Crop the image to remove markers
     cropped = crop_image(extracted, corners)
@@ -117,8 +142,15 @@ def main():
         
         # If at least 4 markers are detected, create mask, extract pixels and generate image
         if ids is not None and len(ids) >= 4:
-            mask = create_polygon_mask(frame, corners)
-            extracted = extract_pixels(frame, mask)
+            # Calculate perspective transform
+            M, output_size = calculate_perspective_transform(corners)
+            
+            # Apply perspective transform to the frame
+            transformed_frame = apply_perspective_transform(frame, M, output_size)
+            
+            # Create mask and extract pixels from the transformed frame
+            mask = create_polygon_mask(transformed_frame, corners)
+            extracted = extract_pixels(transformed_frame, mask)
             cv2.imshow('Extracted', extracted)
             
             # Preprocess the extracted sketch
@@ -137,11 +169,15 @@ def main():
             
             # Visualize the mask
             cv2.imshow('Mask', mask)
+            
+            # Display the transformed frame
+            cv2.imshow('Transformed Frame', transformed_frame)
         else:
             pass
             #cv2.destroyWindow('Extracted')
             #cv2.destroyWindow('Generated')
             #cv2.destroyWindow('Mask')
+            #cv2.destroyWindow('Transformed Frame')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
