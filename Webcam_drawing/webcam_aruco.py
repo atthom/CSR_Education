@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from diffusers import DiffusionPipeline
-from diffusers.utils import load_image
+from diffusers import StableDiffusionImg2ImgPipeline
 
 
 # Load predefined dictionary of ArUco markers
@@ -106,10 +105,8 @@ def preprocess_sketch(extracted, corners):
     return pil_image
 
 def load_sketch_to_image_model():
-    base_model_id = "black-forest-labs/FLUX.1-Kontext-dev"
-    lora_model_id = "gokaygokay/Sketch-to-Image-Kontext-Dev-LoRA"
-    pipe = DiffusionPipeline.from_pretrained(base_model_id, torch_dtype=torch.float16)
-    pipe.load_lora_weights(lora_model_id)
+    model_id = "runwayml/stable-diffusion-v1-5"
+    pipe = StableDiffusionImg2ImgPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
     pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
     return pipe
 
@@ -125,8 +122,8 @@ def generate_image_from_sketch(sketch, pipe):
     sketch_image = transforms.ToPILImage()(sketch_tensor)
 
     # Generate image from sketch
-    prompt = "Convert this sketch into real life version, follow exact structure, a woman with horns"
-    image = pipe(prompt=prompt, image=sketch_image).images[0]
+    prompt = "Convert this sketch into real life version, follow exact structure"
+    image = pipe(prompt=prompt, image=sketch_image, strength=0.75, guidance_scale=7.5).images[0]
     
     return image
 
