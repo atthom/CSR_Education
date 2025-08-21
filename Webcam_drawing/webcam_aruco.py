@@ -123,11 +123,26 @@ def generate_image_from_sketch(sketch, model):
 
     # Generate image from sketch
     with torch.no_grad():
+        sketch_tensor = sketch_tensor.to("cuda" if torch.cuda.is_available() else "cpu")
         output = model(sketch_tensor)
     
     # Post-process the output
-    output = (output + 1) / 2.0
-    output = output.squeeze().permute(1, 2, 0).numpy()
+    if isinstance(output, dict):
+        # If the output is a dictionary (e.g., for segmentation models), get the main prediction
+        output = output['out']
+    
+    # Ensure the output has the correct number of dimensions
+    if output.dim() == 4:
+        output = output.squeeze(0)  # Remove batch dimension if present
+    elif output.dim() < 3:
+        raise ValueError(f"Unexpected output shape: {output.shape}")
+    
+    # Normalize the output to 0-1 range
+    output = output.float()
+    output = (output - output.min()) / (output.max() - output.min())
+    
+    # Convert to numpy array and scale to 0-255
+    output = output.permute(1, 2, 0).cpu().numpy()
     output = (output * 255).clip(0, 255).astype(np.uint8)
     
     return Image.fromarray(output)
