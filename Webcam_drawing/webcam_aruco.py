@@ -2,8 +2,10 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from diffusers import StableDiffusionPipeline
+import torchvision.transforms as transforms
 from PIL import Image
+from torchvision.models import resnet50
+from torchvision.models.segmentation import deeplabv3_resnet50
 
 
 # Load predefined dictionary of ArUco markers
@@ -51,8 +53,8 @@ def crop_image(image, corners):
     x, y, w, h = cv2.boundingRect(points)
     
     # Add a small margin (e.g., 5% of width/height) to ensure we don't crop too tightly
-    margin_x = int(w * 0.05)
-    margin_y = int(h * 0.05)
+    margin_x = -int(w * 0.1)
+    margin_y = -int(h * 0.1)
     
     # Crop the image, ensuring we don't go out of bounds
     cropped = image[max(0, y-margin_y):min(image.shape[0], y+h+margin_y),
@@ -93,7 +95,7 @@ def preprocess_sketch(extracted, corners):
     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
     
     # Apply adaptive Gaussian thresholding
-    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 4)
     
     # Normalize to 0-1 range
     normalized = bw.astype(np.float32) / 255.0
@@ -103,11 +105,25 @@ def preprocess_sketch(extracted, corners):
     
     return pil_image
 
-def generate_image_from_sketch(sketch, pipe):
+def generate_image_from_sketch(sketch, model):
+    # Preprocess the sketch
+    preprocess = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ])
+    sketch_tensor = preprocess(sketch).unsqueeze(0)
+
     # Generate image from sketch
     with torch.no_grad():
-        image = pipe(prompt="A detailed colorful image", image=sketch).images[0]
-    return image
+        output = model(sketch_tensor)
+    
+    # Post-process the output
+    output = (output + 1) / 2.0
+    output = output.squeeze().permute(1, 2, 0).numpy()
+    output = (output * 255).clip(0, 255).astype(np.uint8)
+    
+    return Image.fromarray(output)
 
 def main():
     # Initialize the webcam
@@ -119,9 +135,12 @@ def main():
 
     # Load the pre-trained model
     try:
-        pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", torch_dtype=torch.float32)
-        pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Model loaded successfully. Using device: {pipe.device}")
+        # For this example, we'll use a pre-trained ResNet model as a placeholder
+        # In a real scenario, you would load a properly trained Pix2Pix model here
+        model = resnet50(pretrained=True)
+        model = model.eval()
+        model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Model loaded successfully. Using device: {next(model.parameters()).device}")
     except Exception as e:
         print(f"Error loading the model: {str(e)}")
         return
@@ -147,21 +166,21 @@ def main():
             extracted = extract_pixels(frame, mask)
             
             # Calculate perspective transform
-            M, output_size = calculate_perspective_transform(corners)
+            #M, output_size = calculate_perspective_transform(corners)
             
             # Apply perspective transform to the extracted image
-            transformed_extracted = apply_perspective_transform(extracted, M, output_size)
-            cv2.imshow('Transformed Extracted', transformed_extracted)
+            #transformed_extracted = apply_perspective_transform(extracted, M, output_size)
+            #cv2.imshow('Transformed Extracted', transformed_extracted)
             
             # Preprocess the transformed extracted sketch
-            sketch = preprocess_sketch(transformed_extracted, corners)
+            sketch = preprocess_sketch(extracted, corners)
             
             # Convert PIL Image back to OpenCV format for display
             sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
             cv2.imshow('Preprocessed Sketch', sketch_cv)
             
             # Generate image from sketch
-            generated_image = generate_image_from_sketch(sketch, pipe)
+            generated_image = generate_image_from_sketch(sketch, model)
             
             # Convert PIL Image to OpenCV format
             generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
