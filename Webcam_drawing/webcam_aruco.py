@@ -45,22 +45,33 @@ def extract_pixels(frame, mask):
     
     return extracted
 
-def preprocess_sketch(extracted):
+def crop_image(image, corners):
+    # Find the bounding rectangle of the polygon
+    points = np.concatenate(corners).reshape(-1, 2)
+    x, y, w, h = cv2.boundingRect(points)
+    
+    # Add a small margin (e.g., 5% of width/height) to ensure we don't crop too tightly
+    margin_x = int(w * 0.05)
+    margin_y = int(h * 0.05)
+    
+    # Crop the image, ensuring we don't go out of bounds
+    cropped = image[max(0, y-margin_y):min(image.shape[0], y+h+margin_y),
+                    max(0, x-margin_x):min(image.shape[1], x+w+margin_x)]
+    
+    return cropped
+
+def preprocess_sketch(extracted, corners):
+    # Crop the image to remove markers
+    cropped = crop_image(extracted, corners)
+    
     # Convert to grayscale
-    gray = cv2.cvtColor(extracted, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
     
-    # Apply thresholding to convert to black and white
-    _, bw = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
-    
-    # Apply contrast enhancement
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced = clahe.apply(bw)
-    
-    # Invert colors
-    inverted = cv2.bitwise_not(enhanced)
+    # Apply adaptive Gaussian thresholding
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
     
     # Normalize to 0-1 range
-    normalized = inverted.astype(np.float32) / 255.0
+    normalized = bw.astype(np.float32) / 255.0
     
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
@@ -111,7 +122,7 @@ def main():
             cv2.imshow('Extracted', extracted)
             
             # Preprocess the extracted sketch
-            sketch = preprocess_sketch(extracted)
+            sketch = preprocess_sketch(extracted, corners)
             
             # Convert PIL Image back to OpenCV format for display
             sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
