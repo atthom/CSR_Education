@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from torchvision.models import resnet50
-from torchvision.models.segmentation import deeplabv3_resnet50
+from diffusers import StableDiffusionPipeline
 
 
 # Load predefined dictionary of ArUco markers
@@ -105,47 +104,28 @@ def preprocess_sketch(extracted, corners):
     
     return pil_image
 
-def generate_image_from_sketch(sketch, model):
+def load_sketch_to_image_model():
+    model_id = "gokaygokay/Sketch-to-Image-Kontext-Dev-LoRA"
+    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+    return pipe
+
+def generate_image_from_sketch(sketch, pipe):
     # Preprocess the sketch
     preprocess = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((512, 512)),
         transforms.ToTensor(),
     ])
-    sketch_tensor = preprocess(sketch).unsqueeze(0)
-
-    # If the input is grayscale, repeat it to create a 3-channel input
-    if sketch_tensor.shape[1] == 1:
-        sketch_tensor = sketch_tensor.repeat(1, 3, 1, 1)
-
-    # Normalize the 3-channel input
-    normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    sketch_tensor = normalize(sketch_tensor)
+    sketch_tensor = preprocess(sketch)
+    
+    # Convert tensor to PIL Image
+    sketch_image = transforms.ToPILImage()(sketch_tensor)
 
     # Generate image from sketch
-    with torch.no_grad():
-        sketch_tensor = sketch_tensor.to("cuda" if torch.cuda.is_available() else "cpu")
-        output = model(sketch_tensor)
+    prompt = "Convert this sketch into real life version, follow exact structure"
+    image = pipe(prompt=prompt, image=sketch_image).images[0]
     
-    # Post-process the output
-    if isinstance(output, dict):
-        # If the output is a dictionary (e.g., for segmentation models), get the main prediction
-        output = output['out']
-    
-    # Ensure the output has the correct number of dimensions
-    if output.dim() == 4:
-        output = output.squeeze(0)  # Remove batch dimension if present
-    elif output.dim() < 3:
-        raise ValueError(f"Unexpected output shape: {output.shape}")
-    
-    # Normalize the output to 0-1 range
-    output = output.float()
-    output = (output - output.min()) / (output.max() - output.min())
-    
-    # Convert to numpy array and scale to 0-255
-    output = output.permute(1, 2, 0).cpu().numpy()
-    output = (output * 255).clip(0, 255).astype(np.uint8)
-    
-    return Image.fromarray(output)
+    return image
 
 def main():
     # Initialize the webcam
@@ -155,14 +135,10 @@ def main():
         print("Error: Could not open webcam.")
         return
 
-    # Load the pre-trained model
+    # Load the Sketch-to-Image model
     try:
-        # For this example, we'll use a pre-trained ResNet model as a placeholder
-        # In a real scenario, you would load a properly trained Pix2Pix model here
-        model = resnet50(pretrained=True)
-        model = model.eval()
-        model = model.to("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Model loaded successfully. Using device: {next(model.parameters()).device}")
+        pipe = load_sketch_to_image_model()
+        print(f"Model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
         print(f"Error loading the model: {str(e)}")
         return
@@ -202,7 +178,7 @@ def main():
             cv2.imshow('Preprocessed Sketch', sketch_cv)
             
             # Generate image from sketch
-            generated_image = generate_image_from_sketch(sketch, model)
+            generated_image = generate_image_from_sketch(sketch, pipe)
             
             # Convert PIL Image to OpenCV format
             generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
