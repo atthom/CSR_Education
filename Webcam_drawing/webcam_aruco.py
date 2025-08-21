@@ -142,19 +142,19 @@ def main():
         
         # If at least 4 markers are detected, create mask, extract pixels and generate image
         if ids is not None and len(ids) >= 4:
+            # Create mask and extract pixels
+            mask = create_polygon_mask(frame, corners)
+            extracted = extract_pixels(frame, mask)
+            
             # Calculate perspective transform
             M, output_size = calculate_perspective_transform(corners)
             
-            # Apply perspective transform to the frame
-            transformed_frame = apply_perspective_transform(frame, M, output_size)
+            # Apply perspective transform to the extracted image
+            transformed_extracted = apply_perspective_transform(extracted, M, output_size)
+            cv2.imshow('Transformed Extracted', transformed_extracted)
             
-            # Create mask and extract pixels from the transformed frame
-            mask = create_polygon_mask(transformed_frame, corners)
-            extracted = extract_pixels(transformed_frame, mask)
-            cv2.imshow('Extracted', extracted)
-            
-            # Preprocess the extracted sketch
-            sketch = preprocess_sketch(extracted, corners)
+            # Preprocess the transformed extracted sketch
+            sketch = preprocess_sketch(transformed_extracted, corners)
             
             # Convert PIL Image back to OpenCV format for display
             sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
@@ -169,15 +169,12 @@ def main():
             
             # Visualize the mask
             cv2.imshow('Mask', mask)
-            
-            # Display the transformed frame
-            cv2.imshow('Transformed Frame', transformed_frame)
         else:
             pass
-            #cv2.destroyWindow('Extracted')
+            #cv2.destroyWindow('Transformed Extracted')
+            #cv2.destroyWindow('Preprocessed Sketch')
             #cv2.destroyWindow('Generated')
             #cv2.destroyWindow('Mask')
-            #cv2.destroyWindow('Transformed Frame')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
