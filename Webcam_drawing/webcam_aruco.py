@@ -96,8 +96,11 @@ def preprocess_sketch(extracted, corners):
     # Apply Canny edge detection
     edges = cv2.Canny(gray, 100, 200)  # Adjust these thresholds as needed
     
+    # Invert the colors
+    inverted_edges = cv2.bitwise_not(edges)
+    
     # Normalize to 0-1 range
-    normalized = edges.astype(np.float32) / 255.0
+    normalized = inverted_edges.astype(np.float32) / 255.0
     
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
