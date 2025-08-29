@@ -45,8 +45,8 @@ gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
 total_iterations = 51 * 51  # 0 to 250 with step 5 for both thresholds
 current_iteration = 0
 
-for lower in range(0, 255, 5):
-    for upper in range(0, 255, 5):
+for lower in range(30, 200, 5):
+    for upper in range(40, 160, 5):
         # Apply Canny edge detection
         edges = cv2.Canny(gray, lower, upper)
 
