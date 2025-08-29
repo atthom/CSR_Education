@@ -3,11 +3,13 @@ import numpy as np
 from PIL import Image
 import os
 
+
+# Load predefined dictionary of ArUco markers
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
+parameters = cv2.aruco.DetectorParameters()
+detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+
 def detect_aruco(frame):
-    # Load predefined dictionary of ArUco markers
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
-    parameters = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
     
     # Convert to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -75,7 +77,7 @@ def generate_threshold_images(frame, corners, output_dir):
     
     # Test different parameters
     for block_size in range(3, 52, 2):  # Odd values from 3 to 51
-        for C in range(-10, 11):  # Values from -10 to 10
+        for C in range(4, 11):  # Values from -10 to 10
             # Preprocess the sketch with current parameters
             bw = preprocess_sketch(extracted, corners, block_size, C)
             
