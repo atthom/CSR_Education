@@ -5,7 +5,13 @@ import torch
 import torchvision.transforms as transforms
 from PIL import Image
 from diffusers import DiffusionPipeline
+from controlnet_aux import HEDdetector, MLSDdetector
 
+from diffusers import (
+    ControlNetModel,
+    StableDiffusionControlNetPipeline,
+    UniPCMultistepScheduler,
+)
 
 # Load predefined dictionary of ArUco markers
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
@@ -105,28 +111,27 @@ def preprocess_sketch(extracted, corners):
     # Convert to PIL Image
     pil_image = Image.fromarray((normalized * 255).astype(np.uint8))
     
-    return pil_image
+    return gray
 
 def load_controlnet_model():
-    pipe = DiffusionPipeline.from_pretrained("xinsir/controlnet-scribble-sdxl-1.0")
-    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-    return pipe
+    checkpoint = "lllyasviel/control_v11p_sd15_scribble"
+    processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
+    controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
+    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+        "runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16
+    ).to("cuda" if torch.cuda.is_available() else "cpu")
 
-def generate_image_from_sketch(sketch, pipe):
-    # Preprocess the sketch
-    preprocess = transforms.Compose([
-        transforms.Resize((1024, 1024)),
-        transforms.ToTensor(),
-    ])
-    sketch_tensor = preprocess(sketch)
-    
-    # Convert tensor to PIL Image
-    sketch_image = transforms.ToPILImage()(sketch_tensor)
+    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+    #pipe.enable_model_cpu_offload()
+    return processor, pipe
 
-    # Generate image from sketch
-    prompt = "Convert this sketch into real life version, follow exact structure"
-    image = pipe(prompt=prompt, image=sketch_image).images[0]
+def generate_image_from_sketch(sketch, processor, pipe):
+    control_image = processor(sketch, scribble=True)
     
+    prompt = "old tree with falling leafs on a little hill and a cute flower on the right."
+    generator = torch.manual_seed(0)
+    image = pipe(prompt, num_inference_steps=50, generator=generator, image=control_image).images[0]
+
     return image
 
 def main():
@@ -139,7 +144,7 @@ def main():
 
     # Load the ControlNet model
     try:
-        pipe = load_controlnet_model()
+        preprocessor, pipe = load_controlnet_model()
         print(f"ControlNet model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
         print(f"Error loading the ControlNet model: {str(e)}")
@@ -177,10 +182,11 @@ def main():
             
             # Convert PIL Image back to OpenCV format for display
             sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
-            cv2.imshow('Preprocessed Sketch', sketch_cv)
+            cv2.imshow('Preprocessed Sketch', sketch)
+            cv2.imshow('Preprocessed sketch_cv', sketch_cv)
             
             # Generate image from sketch
-            generated_image = generate_image_from_sketch(sketch, pipe)
+            generated_image = generate_image_from_sketch(sketch, preprocessor, pipe)
             
             # Convert PIL Image to OpenCV format
             generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
