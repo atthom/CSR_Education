@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from diffusers import DiffusionPipeline
-from controlnet_aux import HEDdetector, MLSDdetector
-
-from diffusers import (
-    ControlNetModel,
-    StableDiffusionControlNetPipeline,
-    UniPCMultistepScheduler,
-)
+import random
+from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline, AutoencoderKL
+from diffusers import DDIMScheduler, EulerAncestralDiscreteScheduler
+from controlnet_aux import PidiNetDetector, HEDdetector
+from diffusers.utils import load_image
+from huggingface_hub import HfApi
+from pathlib import Path
+import os
 
 # Load predefined dictionary of ArUco markers
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
@@ -114,23 +114,51 @@ def preprocess_sketch(extracted, corners):
     return gray
 
 def load_controlnet_model():
-    checkpoint = "lllyasviel/control_v11p_sd15_scribble"
-    processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
-    controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
-    pipe = StableDiffusionControlNetPipeline.from_pretrained(
-        "runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16
-    ).to("cuda" if torch.cuda.is_available() else "cpu")
+    controlnet_conditioning_scale = 1.0
+    eulera_scheduler = EulerAncestralDiscreteScheduler.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", subfolder="scheduler")
 
-    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
-    #pipe.enable_model_cpu_offload()
+    controlnet = ControlNetModel.from_pretrained(
+        "xinsir/controlnet-scribble-sdxl-1.0",
+        torch_dtype=torch.float16
+    )
+
+    vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+
+    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-xl-base-1.0",
+        controlnet=controlnet,
+        vae=vae,
+        safety_checker=None,
+        torch_dtype=torch.float16,
+        scheduler=eulera_scheduler,
+    )
+
+    processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
     return processor, pipe
 
 def generate_image_from_sketch(sketch, processor, pipe):
     control_image = processor(sketch, scribble=True)
     
-    prompt = "old tree with falling leafs on a little hill and a cute flower on the right."
-    generator = torch.manual_seed(0)
-    image = pipe(prompt, num_inference_steps=50, generator=generator, image=control_image).images[0]
+    prompt = "good quality, photorealistic, professional, high res, 4k"
+    negative_prompt = 'longbody, too much detail, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality'
+    
+    controlnet_conditioning_scale = 1.0
+    
+    # Resize the control image to 1024x1024 or maintain aspect ratio
+    width, height = control_image.size
+    ratio = np.sqrt(1024. * 1024. / (width * height))
+    new_width, new_height = int(width * ratio), int(height * ratio)
+    control_image = control_image.resize((new_width, new_height))
+    
+    image = pipe(
+        prompt,
+        negative_prompt=negative_prompt,
+        image=control_image,
+        controlnet_conditioning_scale=controlnet_conditioning_scale,
+        width=new_width,
+        height=new_height,
+        num_inference_steps=30,
+    ).images[0]
 
     return image
 
@@ -145,6 +173,7 @@ def main():
     # Load the ControlNet model
     try:
         preprocessor, pipe = load_controlnet_model()
+        pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
         print(f"ControlNet model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
         print(f"Error loading the ControlNet model: {str(e)}")
@@ -170,14 +199,7 @@ def main():
             mask = create_polygon_mask(frame, corners)
             extracted = extract_pixels(frame, mask)
             
-            # Calculate perspective transform
-            #M, output_size = calculate_perspective_transform(corners)
-            
-            # Apply perspective transform to the extracted image
-            #transformed_extracted = apply_perspective_transform(extracted, M, output_size)
-            #cv2.imshow('Transformed Extracted', transformed_extracted)
-            
-            # Preprocess the transformed extracted sketch
+            # Preprocess the extracted sketch
             sketch = preprocess_sketch(extracted, corners)
             
             # Convert PIL Image back to OpenCV format for display
@@ -186,7 +208,8 @@ def main():
             cv2.imshow('Preprocessed sketch_cv', sketch_cv)
             
             # Generate image from sketch
-            generated_image = generate_image_from_sketch(sketch, preprocessor, pipe)
+            with torch.no_grad():
+                generated_image = generate_image_from_sketch(sketch, preprocessor, pipe)
             
             # Convert PIL Image to OpenCV format
             generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
@@ -195,11 +218,10 @@ def main():
             # Visualize the mask
             cv2.imshow('Mask', mask)
         else:
-            pass
-            #cv2.destroyWindow('Transformed Extracted')
-            #cv2.destroyWindow('Preprocessed Sketch')
-            #cv2.destroyWindow('Generated')
-            #cv2.destroyWindow('Mask')
+            cv2.destroyWindow('Preprocessed Sketch')
+            cv2.destroyWindow('Preprocessed sketch_cv')
+            cv2.destroyWindow('Generated')
+            cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
