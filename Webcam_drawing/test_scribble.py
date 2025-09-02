@@ -19,10 +19,7 @@ image = load_image(
 )
 
 prompt = "royal chamber with fancy bed"
-
-
 checkpoint = "lllyasviel/control_v11p_sd15_scribble"
-
 processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
 
 control_image = processor(image, scribble=True)

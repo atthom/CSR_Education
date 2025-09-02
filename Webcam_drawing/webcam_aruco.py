@@ -20,6 +20,9 @@ aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
 parameters = cv2.aruco.DetectorParameters()
 detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 def detect_aruco(frame):
     # Convert to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -134,7 +137,13 @@ def load_controlnet_model():
         scheduler=ddim_scheduler,
     )
 
+    #pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
+    
+    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+    pipe.enable_model_cpu_offload()
+
     processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
+    
     return processor, pipe
 
 def generate_image_from_sketch(sketch, processor, pipe):
@@ -147,18 +156,19 @@ def generate_image_from_sketch(sketch, processor, pipe):
     
     # Resize the control image to 1024x1024 or maintain aspect ratio
     width, height = control_image.size
-    ratio = np.sqrt(1024. * 1024. / (width * height))
+    ratio = np.sqrt(1024. * 1024. / (width * height)) 
     new_width, new_height = int(width * ratio), int(height * ratio)
     control_image = control_image.resize((new_width, new_height))
     
     image = pipe(
         prompt,
         negative_prompt=negative_prompt,
+        num_images_per_prompt=1,
         image=control_image,
         controlnet_conditioning_scale=controlnet_conditioning_scale,
         width=new_width,
         height=new_height,
-        num_inference_steps=20,  # Reduced from 30
+        num_inference_steps=5,
     ).images[0]
 
     return image
@@ -202,7 +212,6 @@ def main():
     # Load the ControlNet model
     try:
         preprocessor, pipe = load_controlnet_model()
-        pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
         print(f"ControlNet model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
         print(f"Error loading the ControlNet model: {str(e)}")
@@ -258,10 +267,11 @@ def main():
             # Visualize the mask
             cv2.imshow('Mask', mask)
         else:
-            cv2.destroyWindow('Preprocessed Sketch')
-            cv2.destroyWindow('Preprocessed sketch_cv')
-            cv2.destroyWindow('Generated')
-            cv2.destroyWindow('Mask')
+            pass
+            #cv2.destroyWindow('Preprocessed Sketch')
+            #cv2.destroyWindow('Preprocessed sketch_cv')
+            #cv2.destroyWindow('Generated')
+            #cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
