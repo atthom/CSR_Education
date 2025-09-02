@@ -18,6 +18,9 @@ aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
 parameters = cv2.aruco.DetectorParameters()
 detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 def detect_aruco(frame):
     # Convert to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -133,7 +136,13 @@ def load_controlnet_model():
         scheduler=eulera_scheduler,
     )
 
+    #pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
+    
+    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+    pipe.enable_model_cpu_offload()
+
     processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
+    
     return processor, pipe
 
 def generate_image_from_sketch(sketch, processor, pipe):
@@ -158,7 +167,7 @@ def generate_image_from_sketch(sketch, processor, pipe):
         controlnet_conditioning_scale=controlnet_conditioning_scale,
         width=new_width,
         height=new_height,
-        num_inference_steps=50,
+        num_inference_steps=5,
     ).images[0]
 
     return image
@@ -174,7 +183,6 @@ def main():
     # Load the ControlNet model
     try:
         preprocessor, pipe = load_controlnet_model()
-        pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
         print(f"ControlNet model loaded successfully. Using device: {pipe.device}")
     except Exception as e:
         print(f"Error loading the ControlNet model: {str(e)}")
