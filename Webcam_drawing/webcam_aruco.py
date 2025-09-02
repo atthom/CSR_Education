@@ -182,6 +182,7 @@ class ImageGenerator(threading.Thread):
         self.result = None
         self.running = True
         self.processing = False
+        self.new_result = False
 
     def run(self):
         while self.running:
@@ -192,6 +193,7 @@ class ImageGenerator(threading.Thread):
                     with torch.no_grad():
                         self.result = generate_image_from_sketch(sketch, self.preprocessor, self.pipe)
                     self.processing = False
+                    self.new_result = True
             except queue.Empty:
                 continue
 
@@ -200,6 +202,12 @@ class ImageGenerator(threading.Thread):
 
     def is_processing(self):
         return self.processing
+
+    def get_result(self):
+        if self.new_result:
+            self.new_result = False
+            return self.result
+        return None
 
 def main():
     # Initialize the webcam
@@ -258,20 +266,19 @@ def main():
                 except queue.Full:
                     pass  # Queue is full, skip this frame
             
-            # Check if a generated image is available
-            if image_generator.result is not None:
-                generated_cv = cv2.cvtColor(np.array(image_generator.result), cv2.COLOR_RGB2BGR)
+            # Check if a new generated image is available
+            generated_image = image_generator.get_result()
+            if generated_image is not None:
+                generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
                 cv2.imshow('Generated', generated_cv)
-                image_generator.result = None
             
             # Visualize the mask
             cv2.imshow('Mask', mask)
         else:
-            pass
-            #cv2.destroyWindow('Preprocessed Sketch')
-            #cv2.destroyWindow('Preprocessed sketch_cv')
-            #cv2.destroyWindow('Generated')
-            #cv2.destroyWindow('Mask')
+            cv2.destroyWindow('Preprocessed Sketch')
+            cv2.destroyWindow('Preprocessed sketch_cv')
+            cv2.destroyWindow('Generated')
+            cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
