@@ -116,8 +116,7 @@ def preprocess_sketch(extracted, corners):
     return gray
 
 def load_controlnet_model():
-    controlnet_conditioning_scale = 1.0
-    eulera_scheduler = EulerAncestralDiscreteScheduler.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", subfolder="scheduler")
+    ddim_scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", subfolder="scheduler")
 
     controlnet = ControlNetModel.from_pretrained(
         "xinsir/controlnet-scribble-sdxl-1.0",
@@ -132,7 +131,7 @@ def load_controlnet_model():
         vae=vae,
         safety_checker=None,
         torch_dtype=torch.float16,
-        scheduler=eulera_scheduler,
+        scheduler=ddim_scheduler,
     )
 
     processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
@@ -144,7 +143,7 @@ def generate_image_from_sketch(sketch, processor, pipe):
     prompt = "good quality, photorealistic, professional, high res, 4k"
     negative_prompt = 'longbody, too much detail, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality'
     
-    controlnet_conditioning_scale = 1.0
+    controlnet_conditioning_scale = 0.8  # Slightly reduced from 1.0
     
     # Resize the control image to 1024x1024 or maintain aspect ratio
     width, height = control_image.size
@@ -159,7 +158,7 @@ def generate_image_from_sketch(sketch, processor, pipe):
         controlnet_conditioning_scale=controlnet_conditioning_scale,
         width=new_width,
         height=new_height,
-        num_inference_steps=30,
+        num_inference_steps=20,  # Reduced from 30
     ).images[0]
 
     return image
