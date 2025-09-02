@@ -12,6 +12,8 @@ from diffusers.utils import load_image
 from huggingface_hub import HfApi
 from pathlib import Path
 import os
+import threading
+import queue
 
 # Load predefined dictionary of ArUco markers
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
@@ -162,6 +164,34 @@ def generate_image_from_sketch(sketch, processor, pipe):
 
     return image
 
+class ImageGenerator(threading.Thread):
+    def __init__(self, preprocessor, pipe):
+        threading.Thread.__init__(self)
+        self.preprocessor = preprocessor
+        self.pipe = pipe
+        self.queue = queue.Queue(maxsize=1)  # Limit queue size to 1
+        self.result = None
+        self.running = True
+        self.processing = False
+
+    def run(self):
+        while self.running:
+            try:
+                if not self.processing:
+                    sketch = self.queue.get(timeout=1)
+                    self.processing = True
+                    with torch.no_grad():
+                        self.result = generate_image_from_sketch(sketch, self.preprocessor, self.pipe)
+                    self.processing = False
+            except queue.Empty:
+                continue
+
+    def stop(self):
+        self.running = False
+
+    def is_processing(self):
+        return self.processing
+
 def main():
     # Initialize the webcam
     cap = cv2.VideoCapture(0)
@@ -179,7 +209,12 @@ def main():
         print(f"Error loading the ControlNet model: {str(e)}")
         return
     
+    # Create and start the image generator thread
+    image_generator = ImageGenerator(preprocessor, pipe)
+    image_generator.start()
+    
     frame_count = 0
+    last_sketch = None
     while cap.isOpened():
         # Capture frame-by-frame
         ret, frame = cap.read()
@@ -207,13 +242,19 @@ def main():
             cv2.imshow('Preprocessed Sketch', sketch)
             cv2.imshow('Preprocessed sketch_cv', sketch_cv)
             
-            # Generate image from sketch
-            with torch.no_grad():
-                generated_image = generate_image_from_sketch(sketch, preprocessor, pipe)
+            # Queue the sketch for image generation if it's different from the last one and not currently processing
+            if not np.array_equal(sketch, last_sketch) and not image_generator.is_processing():
+                try:
+                    image_generator.queue.put_nowait(sketch)
+                    last_sketch = sketch
+                except queue.Full:
+                    pass  # Queue is full, skip this frame
             
-            # Convert PIL Image to OpenCV format
-            generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
-            cv2.imshow('Generated', generated_cv)
+            # Check if a generated image is available
+            if image_generator.result is not None:
+                generated_cv = cv2.cvtColor(np.array(image_generator.result), cv2.COLOR_RGB2BGR)
+                cv2.imshow('Generated', generated_cv)
+                image_generator.result = None
             
             # Visualize the mask
             cv2.imshow('Mask', mask)
@@ -229,6 +270,10 @@ def main():
         # Break the loop on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+    
+    # Stop the image generator thread
+    image_generator.stop()
+    image_generator.join()
     
     # Release the capture and destroy windows
     cap.release()
