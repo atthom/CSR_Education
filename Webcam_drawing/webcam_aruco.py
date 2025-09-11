@@ -226,8 +226,8 @@ def main():
         return
     
     # Create and start the image generator thread
-    image_generator = ImageGenerator(preprocessor, pipe)
-    image_generator.start()
+    #image_generator = ImageGenerator(preprocessor, pipe)
+    #image_generator.start()
     
     frame_count = 0
     last_sketch = None
@@ -252,33 +252,35 @@ def main():
             
             # Preprocess the extracted sketch
             sketch = preprocess_sketch(extracted, corners)
-            
-            # Convert PIL Image back to OpenCV format for display
-            sketch_cv = cv2.cvtColor(np.array(sketch), cv2.COLOR_RGB2BGR)
             cv2.imshow('Preprocessed Sketch', sketch)
-            cv2.imshow('Preprocessed sketch_cv', sketch_cv)
             
             # Queue the sketch for image generation if it's different from the last one and not currently processing
-            if not np.array_equal(sketch, last_sketch) and not image_generator.is_processing():
-                try:
-                    image_generator.queue.put_nowait(sketch)
-                    last_sketch = sketch
-                except queue.Full:
-                    pass  # Queue is full, skip this frame
-            
-            # Check if a new generated image is available
-            generated_image = image_generator.get_result()
-            if generated_image is not None:
-                generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
-                cv2.imshow('Generated', generated_cv)
+            if False:
+                if not np.array_equal(sketch, last_sketch) and not image_generator.is_processing():
+                    try:
+                        image_generator.queue.put_nowait(sketch)
+                        last_sketch = sketch
+                    except queue.Full:
+                        pass  # Queue is full, skip this frame
+                
+                # Check if a new generated image is available
+                generated_image = image_generator.get_result()
+                if generated_image is not None:
+                    generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
+                    cv2.imshow('Generated', generated_cv)
+                    input()
+            generated_image = generate_image_from_sketch(sketch, preprocessor, pipe)
+            generated_cv = cv2.cvtColor(np.array(generated_image), cv2.COLOR_RGB2BGR)
+            cv2.imshow('Generated', generated_cv)
             
             # Visualize the mask
-            cv2.imshow('Mask', mask)
+            #cv2.imshow('Mask', mask)
         else:
-            cv2.destroyWindow('Preprocessed Sketch')
-            cv2.destroyWindow('Preprocessed sketch_cv')
-            cv2.destroyWindow('Generated')
-            cv2.destroyWindow('Mask')
+            pass
+            #cv2.destroyWindow('Preprocessed Sketch')
+            #cv2.destroyWindow('Preprocessed sketch_cv')
+            #cv2.destroyWindow('Generated')
+            #cv2.destroyWindow('Mask')
         
         # Display the resulting frame
         cv2.imshow('Webcam', frame)
