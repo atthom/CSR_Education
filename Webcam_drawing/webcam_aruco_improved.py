@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import random
 from diffusers import ControlNetModel, StableDiffusionControlNetPipeline, AutoencoderKL
-from diffusers import DDIMScheduler, EulerAncestralDiscreteScheduler
+from diffusers import DDIMScheduler, EulerAncestralDiscreteScheduler, UniPCMultistepScheduler
 from controlnet_aux import PidiNetDetector, HEDdetector
 from diffusers.utils import load_image
 from huggingface_hub import HfApi
@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import threading
 import queue
+from utils import scribble_to_black_on_white
 
 # Load predefined dictionary of ArUco markers
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
@@ -119,97 +120,44 @@ def preprocess_sketch(extracted, corners):
     return gray
 
 def load_controlnet_model():
+    
     torch.backends.cudnn.benchmark = True  # Optimize cuDNN performance
 
-    # Use a fast scheduler
-    scheduler = EulerAncestralDiscreteScheduler.from_pretrained(
-        "stable-diffusion-v1-5/stable-diffusion-v1-5", subfolder="scheduler"
-    )
+    controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-scribble")
+    
+    pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", 
+                                                             controlnet=controlnet, 
+                                                             safety_checker=None,
+                                                             ).to('cuda')
+    
+    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
-    #ddim_scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", subfolder="scheduler")
+    pipe.enable_xformers_memory_efficient_attention()
 
-    controlnet = ControlNetModel.from_pretrained(
-        "lllyasviel/control_v11p_sd15_scribble",
-        torch_dtype=torch.float16
-    )
-
-    pipe = StableDiffusionControlNetPipeline.from_pretrained(
-        "stable-diffusion-v1-5/stable-diffusion-v1-5",
-        controlnet=controlnet,
-        safety_checker=None,
-        torch_dtype=torch.float16,
-        scheduler=scheduler,
-    )
-
-    # Optional: compile for even faster inference (try disabling if it crashes)
-    #pipe.unet = torch.compile(pipe.unet, mode="default", fullgraph=False)
-
-    pipe.to("cuda")
+    pipe.enable_model_cpu_offload()
+    
     processor = HEDdetector.from_pretrained("lllyasviel/Annotators").to("cuda")
 
     return processor, pipe
-    #controlnet = ControlNetModel.from_pretrained(
-    #    "xinsir/controlnet-scribble-sdxl-1.0",
-    #    torch_dtype=torch.float16
-    #)
-    """
-    vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
-
-    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        controlnet=controlnet,
-        vae=vae,
-        safety_checker=None,
-        torch_dtype=torch.float16,
-        scheduler=ddim_scheduler,
-    )
-    """
-    """
-    #pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
-    
-    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-    pipe.enable_model_cpu_offload()
-
-    processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
-    
-    return processor, pipe
-    """
 
 
 def generate_image_from_sketch(sketch, processor, pipe):
-    control_image = processor(sketch, scribble=True)
     
-    #prompt = "good quality, photorealistic, professional, high res, 4k"
-    #negative_prompt = 'longbody, too much detail, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality'
-    
-    controlnet_conditioning_scale = 0.8  # Slightly reduced from 1.0
-    
-    # Resize the control image to 1024x1024 or maintain aspect ratio
-    #width, height = control_image.size
-    #ratio = np.sqrt(1024. * 1024. / (width * height)) 
-    #new_width, new_height = int(width * ratio), int(height * ratio)
-    #control_image = control_image.resize((new_width, new_height))
+    sketch=Image.fromarray(sketch.astype(np.uint8), mode='L')
+    hed_image=scribble_to_black_on_white(sketch, True)
+    hed_image.save("HED_processed_image.png")
 
-    """ 
-    image = pipe(
-        prompt,
-        negative_prompt=negative_prompt,
-        num_images_per_prompt=1,
-        image=control_image,
-        controlnet_conditioning_scale=controlnet_conditioning_scale,
-        width=new_width,
-        height=new_height,
-        num_inference_steps=5,
-    ).images[0]
-    """
+    prompt_input=input("Enter a prompt ... ")
 
     image = pipe(
-        prompt="photorealistic, high quality 4k Image of a House in mountain with a lake nearby and rising sun, Please follow as closly as the initial image ",
-        image=control_image,
-        num_inference_steps=20,  # FAST!
-        guidance_scale=6.0,
-        controlnet_conditioning_scale=1.0,
-    ).images[0]
+        prompt=prompt_input + ", oil painting", 
+        negative_prompt = "ugly, deformed, disfigured, poor details, bad anatomy",
+        torch_dtype=torch.float16, image=hed_image, num_inference_steps=30, 
+        strength=0.45, guidance_scale=10.5,
+        #guidance_scale=12.0,
+        #controlnet_conditioning_scale=1.0
+        ).images[0]
+
 
     return image
 
